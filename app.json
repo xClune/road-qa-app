@@ -48,12 +48,6 @@
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
         }
-      ],
-      [
-        "expo-network",
-        {
-          "networkPermission": "Access network state"
-        }
       ]
     ],
     "experiments": {
