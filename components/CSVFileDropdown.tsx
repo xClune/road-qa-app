@@ -12,22 +12,29 @@ import {
 import { GoogleDriveService } from "../services/googleDriveService";
 import { useNetInfo } from "@react-native-community/netinfo";
 
+// MODIFIED Interface to include source files
+interface Props {
+  onSelect: (file: CSVFile) => void;
+  label?: string;
+  // NEW: files prop for offline mode
+  files?: CSVFile[];
+}
+
 interface CSVFile {
   id: string;
   name: string;
   modifiedTime: string;
-}
-
-interface Props {
-  onSelect: (file: CSVFile, localPath: string) => void;
-  label?: string;
+  // NEW: optional local path
+  localPath?: string;
 }
 
 export const CSVFileDropdown: React.FC<Props> = ({
   onSelect,
   label = "Select Project",
+  // NEW: Add files prop
+  files = [],
 }) => {
-  const [files, setFiles] = useState<CSVFile[]>([]);
+  const [driveFiles, setDriveFiles] = useState<CSVFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [downloadingFile, setDownloadingFile] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,23 +42,17 @@ export const CSVFileDropdown: React.FC<Props> = ({
   const [selectedFile, setSelectedFile] = useState<CSVFile | null>(null);
   const netInfo = useNetInfo();
 
+  // MODIFIED: Only fetch from Drive if no files provided
   useEffect(() => {
-    console.log("Network status:", netInfo);
-    fetchFiles();
+    if (files.length === 0) {
+      fetchDriveFiles();
+    }
   }, []);
 
-  useEffect(() => {
-    fetchFiles();
-    // Clean up old files on component mount
-    GoogleDriveService.cleanupOldFiles();
-  }, []);
-
-  // Modify the network check
-  const fetchFiles = async () => {
-    // Don't return early if network status is unknown
+  // RENAMED: from fetchFiles to fetchDriveFiles for clarity
+  const fetchDriveFiles = async () => {
     if (netInfo.isConnected === false) {
-      // Only block if definitely offline
-      setError("No internet connection. Showing cached files.");
+      setError("No internet connection");
       return;
     }
 
@@ -60,7 +61,7 @@ export const CSVFileDropdown: React.FC<Props> = ({
 
     try {
       const csvFiles = await GoogleDriveService.listCSVFiles();
-      setFiles(csvFiles);
+      setDriveFiles(csvFiles);
     } catch (err) {
       setError("Failed to load project files. Please try again.");
       console.error("Error fetching CSV files:", err);
@@ -69,25 +70,15 @@ export const CSVFileDropdown: React.FC<Props> = ({
     }
   };
 
+  // MODIFIED: Handle selection based on file source
   const handleSelect = async (file: CSVFile) => {
-    setDownloadingFile(true);
-    setError(null);
-
-    try {
-      const localPath = await GoogleDriveService.downloadFile(
-        file.id,
-        file.name
-      );
-      setSelectedFile(file);
-      setModalVisible(false);
-      onSelect(file, localPath);
-    } catch (err) {
-      setError("Failed to download file. Please try again.");
-      console.error("Error downloading file:", err);
-    } finally {
-      setDownloadingFile(false);
-    }
+    setSelectedFile(file);
+    setModalVisible(false);
+    onSelect(file);
   };
+
+  // NEW: Get display files based on source
+  const displayFiles = files.length > 0 ? files : driveFiles;
 
   return (
     <View style={styles.container}>
@@ -131,7 +122,7 @@ export const CSVFileDropdown: React.FC<Props> = ({
             </View>
           ) : (
             <FlatList
-              data={files}
+              data={displayFiles}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
                 <Pressable
@@ -139,8 +130,12 @@ export const CSVFileDropdown: React.FC<Props> = ({
                   onPress={() => handleSelect(item)}
                 >
                   <Text style={styles.fileName}>{item.name}</Text>
+                  {/* MODIFIED: Show if file is available offline */}
                   <Text style={styles.fileDate}>
-                    Modified: {new Date(item.modifiedTime).toLocaleDateString()}
+                    {item.localPath 
+                      ? "Available Offline"
+                      : `Modified: ${new Date(item.modifiedTime).toLocaleDateString()}`
+                    }
                   </Text>
                 </Pressable>
               )}
@@ -151,6 +146,8 @@ export const CSVFileDropdown: React.FC<Props> = ({
     </View>
   );
 };
+
+// Styles remain unchanged
 
 const styles = StyleSheet.create({
   loadingText: {
