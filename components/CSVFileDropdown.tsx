@@ -147,7 +147,6 @@ export const CSVFileDropdown: React.FC<Props> = ({
   );
 };
 
-// Styles remain unchanged
 
 const styles = StyleSheet.create({
   loadingText: {
