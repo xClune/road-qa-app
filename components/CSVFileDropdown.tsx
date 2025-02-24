@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { csvFileDropdownStyles } from "@/styles";
 import {
   View,
   Text,
@@ -90,18 +91,18 @@ export const CSVFileDropdown: React.FC<Props> = ({
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.label}>{label}</Text>
+    <View style={csvFileDropdownStyles.container}>
+      <Text style={csvFileDropdownStyles.label}>{label}</Text>
       <Pressable
-        style={styles.dropdownButton}
+        style={csvFileDropdownStyles.dropdownButton}
         onPress={() => setModalVisible(true)}
       >
-        <Text style={styles.dropdownButtonText}>
+        <Text style={csvFileDropdownStyles.dropdownButtonText}>
           {selectedFile ? selectedFile.name : "Select a project"}
         </Text>
       </Pressable>
 
-      {error && <Text style={styles.errorText}>{error}</Text>}
+      {error && <Text style={csvFileDropdownStyles.errorText}>{error}</Text>}
 
       <Modal
         visible={modalVisible}
@@ -109,21 +110,21 @@ export const CSVFileDropdown: React.FC<Props> = ({
         presentationStyle="pageSheet"
         onRequestClose={() => setModalVisible(false)}
       >
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Select Project</Text>
+        <SafeAreaView style={csvFileDropdownStyles.modalContainer}>
+          <View style={csvFileDropdownStyles.modalHeader}>
+            <Text style={csvFileDropdownStyles.modalTitle}>Select Project</Text>
             <Pressable
-              style={styles.closeButton}
+              style={csvFileDropdownStyles.closeButton}
               onPress={() => setModalVisible(false)}
             >
-              <Text style={styles.closeButtonText}>Close</Text>
+              <Text style={csvFileDropdownStyles.closeButtonText}>Close</Text>
             </Pressable>
           </View>
 
           {loading || downloadingFile ? (
-            <View style={styles.loadingContainer}>
+            <View style={csvFileDropdownStyles.loadingContainer}>
               <ActivityIndicator size="large" color="#007AFF" />
-              <Text style={styles.loadingText}>
+              <Text style={csvFileDropdownStyles.loadingText}>
                 {downloadingFile
                   ? "Downloading project file..."
                   : "Loading projects..."}
@@ -135,11 +136,13 @@ export const CSVFileDropdown: React.FC<Props> = ({
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
                 <Pressable
-                  style={styles.fileItem}
+                  style={csvFileDropdownStyles.fileItem}
                   onPress={() => handleSelect(item)}
                 >
-                  <Text style={styles.fileName}>{item.name}</Text>
-                  <Text style={styles.fileDate}>
+                  <Text style={csvFileDropdownStyles.fileName}>
+                    {item.name}
+                  </Text>
+                  <Text style={csvFileDropdownStyles.fileDate}>
                     Modified: {new Date(item.modifiedTime).toLocaleDateString()}
                   </Text>
                 </Pressable>
@@ -153,16 +156,6 @@ export const CSVFileDropdown: React.FC<Props> = ({
 };
 
 const styles = StyleSheet.create({
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: "#666",
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
   modalHeader: { flexDirection: "row", justifyContent: "space-between" },
   container: {
     marginBottom: 16,

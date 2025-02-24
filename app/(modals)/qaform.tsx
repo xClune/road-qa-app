@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { Stack } from "expo-router";
+import { qaFormStyles } from "@/styles";
 import {
   View,
   Text,
@@ -196,310 +198,214 @@ export default function QAScreen() {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={qaFormStyles.loadingContainer}>
         <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.loadingText}>Loading test point data...</Text>
+        <Text style={qaFormStyles.loadingText}>Loading test point data...</Text>
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView style={styles.scrollView}>
-        <View style={styles.container}>
-          <Text style={styles.title}>Quality Assurance Form</Text>
+    <>
+      <Stack.Screen
+        options={{
+          title: "Test Point Selection",
+          headerBackTitle: "Projects",
+        }}
+      />
+      <SafeAreaView style={qaFormStyles.safeArea}>
+        <ScrollView style={qaFormStyles.scrollView}>
+          <View style={qaFormStyles.container}>
+            <Text style={qaFormStyles.title}>Quality Assurance Form</Text>
 
-          {/* Pre-filled Information Section */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Location Details</Text>
-            <View style={styles.readOnlyField}>
-              <Text style={styles.label}>Test Point</Text>
-              <Text style={styles.readOnlyText}>{formData.testPoint}</Text>
+            {/* Pre-filled Information Section */}
+            <View style={qaFormStyles.section}>
+              <Text style={qaFormStyles.sectionTitle}>Location Details</Text>
+              <View style={qaFormStyles.readOnlyField}>
+                <Text style={qaFormStyles.label}>Test Point</Text>
+                <Text style={qaFormStyles.readOnlyText}>
+                  {formData.testPoint}
+                </Text>
+              </View>
+              <View style={qaFormStyles.readOnlyField}>
+                <Text style={qaFormStyles.label}>Line Item</Text>
+                <Text style={qaFormStyles.readOnlyText}>
+                  {formData.lineItem}
+                </Text>
+              </View>
+              <View style={qaFormStyles.readOnlyField}>
+                <Text style={qaFormStyles.label}>Treatment Type</Text>
+                <Text style={qaFormStyles.readOnlyText}>
+                  {formData.treatmentType}
+                </Text>
+              </View>
+              <View style={qaFormStyles.readOnlyField}>
+                <Text style={qaFormStyles.label}>Chainage</Text>
+                <Text style={qaFormStyles.readOnlyText}>
+                  {formData.chainage}
+                </Text>
+              </View>
             </View>
-            <View style={styles.readOnlyField}>
-              <Text style={styles.label}>Line Item</Text>
-              <Text style={styles.readOnlyText}>{formData.lineItem}</Text>
+
+            {/* Measurement Input Section */}
+            <View style={qaFormStyles.section}>
+              <Text style={qaFormStyles.sectionTitle}>Measurements</Text>
+
+              <View style={qaFormStyles.fieldRow}>
+                <Text style={qaFormStyles.label}>Line Item Completed</Text>
+                <Switch
+                  value={formData.lineItemCompleted}
+                  onValueChange={(value) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      lineItemCompleted: value,
+                    }))
+                  }
+                />
+              </View>
+
+              <View style={qaFormStyles.field}>
+                <Text style={qaFormStyles.label}>Pavement Thickness (mm)</Text>
+                <TextInput
+                  style={qaFormStyles.input}
+                  value={formData.pavementThickness}
+                  onChangeText={(value) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      pavementThickness: value,
+                    }))
+                  }
+                  keyboardType="decimal-pad"
+                  placeholder="Enter thickness in mm"
+                />
+              </View>
+
+              {/* Outbound Crossfall Section */}
+              <View style={qaFormStyles.field}>
+                <Text style={qaFormStyles.label}>Crossfall Outbound (%)</Text>
+                <TextInput
+                  style={qaFormStyles.input}
+                  value={formData.crossfallOutbound}
+                  onChangeText={(value) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      crossfallOutbound: value,
+                    }))
+                  }
+                  keyboardType="decimal-pad"
+                  placeholder="Enter outbound crossfall"
+                />
+                <View style={qaFormStyles.photoRow}>
+                  <Pressable
+                    style={qaFormStyles.photoButton}
+                    onPress={() => handlePhotoCapture("outbound", 1)}
+                  >
+                    <Text style={qaFormStyles.photoButtonText}>Photo 1</Text>
+                  </Pressable>
+                  <Pressable
+                    style={qaFormStyles.photoButton}
+                    onPress={() => handlePhotoCapture("outbound", 2)}
+                  >
+                    <Text style={qaFormStyles.photoButtonText}>Photo 2</Text>
+                  </Pressable>
+                </View>
+                <View style={qaFormStyles.photoPreviewRow}>
+                  {formData.crossfallOutboundPhotos.photo1 && (
+                    <Image
+                      source={{ uri: formData.crossfallOutboundPhotos.photo1 }}
+                      style={qaFormStyles.photoPreview}
+                    />
+                  )}
+                  {formData.crossfallOutboundPhotos.photo2 && (
+                    <Image
+                      source={{ uri: formData.crossfallOutboundPhotos.photo2 }}
+                      style={qaFormStyles.photoPreview}
+                    />
+                  )}
+                </View>
+              </View>
+
+              {/* Inbound Crossfall Section */}
+              <View style={qaFormStyles.field}>
+                <Text style={qaFormStyles.label}>Crossfall Inbound (%)</Text>
+                <TextInput
+                  style={qaFormStyles.input}
+                  value={formData.crossfallInbound}
+                  onChangeText={(value) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      crossfallInbound: value,
+                    }))
+                  }
+                  keyboardType="decimal-pad"
+                  placeholder="Enter inbound crossfall"
+                />
+                <View style={qaFormStyles.photoRow}>
+                  <Pressable
+                    style={qaFormStyles.photoButton}
+                    onPress={() => handlePhotoCapture("inbound", 1)}
+                  >
+                    <Text style={qaFormStyles.photoButtonText}>Photo 1</Text>
+                  </Pressable>
+                  <Pressable
+                    style={qaFormStyles.photoButton}
+                    onPress={() => handlePhotoCapture("inbound", 2)}
+                  >
+                    <Text style={qaFormStyles.photoButtonText}>Photo 2</Text>
+                  </Pressable>
+                </View>
+                <View style={qaFormStyles.photoPreviewRow}>
+                  {formData.crossfallInboundPhotos.photo1 && (
+                    <Image
+                      source={{ uri: formData.crossfallInboundPhotos.photo1 }}
+                      style={qaFormStyles.photoPreview}
+                    />
+                  )}
+                  {formData.crossfallInboundPhotos.photo2 && (
+                    <Image
+                      source={{ uri: formData.crossfallInboundPhotos.photo2 }}
+                      style={qaFormStyles.photoPreview}
+                    />
+                  )}
+                </View>
+              </View>
+
+              <View style={qaFormStyles.field}>
+                <Text style={qaFormStyles.label}>Road Width Total (m)</Text>
+                <TextInput
+                  style={qaFormStyles.input}
+                  value={formData.roadWidthTotal}
+                  onChangeText={(value) =>
+                    setFormData((prev) => ({ ...prev, roadWidthTotal: value }))
+                  }
+                  keyboardType="decimal-pad"
+                  placeholder="Enter total width in meters"
+                />
+              </View>
+
+              <View style={qaFormStyles.field}>
+                <Text style={qaFormStyles.label}>Comments</Text>
+                <TextInput
+                  style={[qaFormStyles.input, qaFormStyles.commentInput]}
+                  value={formData.comments}
+                  onChangeText={(value) =>
+                    setFormData((prev) => ({ ...prev, comments: value }))
+                  }
+                  multiline
+                  numberOfLines={3}
+                  placeholder="Add any additional comments"
+                />
+              </View>
             </View>
-            <View style={styles.readOnlyField}>
-              <Text style={styles.label}>Treatment Type</Text>
-              <Text style={styles.readOnlyText}>{formData.treatmentType}</Text>
-            </View>
-            <View style={styles.readOnlyField}>
-              <Text style={styles.label}>Chainage</Text>
-              <Text style={styles.readOnlyText}>{formData.chainage}</Text>
-            </View>
+
+            <Pressable style={qaFormStyles.submitButton} onPress={handleSubmit}>
+              <Text style={qaFormStyles.submitButtonText}>
+                Submit Assessment
+              </Text>
+            </Pressable>
           </View>
-
-          {/* Measurement Input Section */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Measurements</Text>
-
-            <View style={styles.fieldRow}>
-              <Text style={styles.label}>Line Item Completed</Text>
-              <Switch
-                value={formData.lineItemCompleted}
-                onValueChange={(value) =>
-                  setFormData((prev) => ({ ...prev, lineItemCompleted: value }))
-                }
-              />
-            </View>
-
-            <View style={styles.field}>
-              <Text style={styles.label}>Pavement Thickness (mm)</Text>
-              <TextInput
-                style={styles.input}
-                value={formData.pavementThickness}
-                onChangeText={(value) =>
-                  setFormData((prev) => ({ ...prev, pavementThickness: value }))
-                }
-                keyboardType="decimal-pad"
-                placeholder="Enter thickness in mm"
-              />
-            </View>
-
-            {/* Outbound Crossfall Section */}
-            <View style={styles.field}>
-              <Text style={styles.label}>Crossfall Outbound (%)</Text>
-              <TextInput
-                style={styles.input}
-                value={formData.crossfallOutbound}
-                onChangeText={(value) =>
-                  setFormData((prev) => ({ ...prev, crossfallOutbound: value }))
-                }
-                keyboardType="decimal-pad"
-                placeholder="Enter outbound crossfall"
-              />
-              <View style={styles.photoRow}>
-                <Pressable
-                  style={styles.photoButton}
-                  onPress={() => handlePhotoCapture("outbound", 1)}
-                >
-                  <Text style={styles.photoButtonText}>Photo 1</Text>
-                </Pressable>
-                <Pressable
-                  style={styles.photoButton}
-                  onPress={() => handlePhotoCapture("outbound", 2)}
-                >
-                  <Text style={styles.photoButtonText}>Photo 2</Text>
-                </Pressable>
-              </View>
-              <View style={styles.photoPreviewRow}>
-                {formData.crossfallOutboundPhotos.photo1 && (
-                  <Image
-                    source={{ uri: formData.crossfallOutboundPhotos.photo1 }}
-                    style={styles.photoPreview}
-                  />
-                )}
-                {formData.crossfallOutboundPhotos.photo2 && (
-                  <Image
-                    source={{ uri: formData.crossfallOutboundPhotos.photo2 }}
-                    style={styles.photoPreview}
-                  />
-                )}
-              </View>
-            </View>
-
-            {/* Inbound Crossfall Section */}
-            <View style={styles.field}>
-              <Text style={styles.label}>Crossfall Inbound (%)</Text>
-              <TextInput
-                style={styles.input}
-                value={formData.crossfallInbound}
-                onChangeText={(value) =>
-                  setFormData((prev) => ({ ...prev, crossfallInbound: value }))
-                }
-                keyboardType="decimal-pad"
-                placeholder="Enter inbound crossfall"
-              />
-              <View style={styles.photoRow}>
-                <Pressable
-                  style={styles.photoButton}
-                  onPress={() => handlePhotoCapture("inbound", 1)}
-                >
-                  <Text style={styles.photoButtonText}>Photo 1</Text>
-                </Pressable>
-                <Pressable
-                  style={styles.photoButton}
-                  onPress={() => handlePhotoCapture("inbound", 2)}
-                >
-                  <Text style={styles.photoButtonText}>Photo 2</Text>
-                </Pressable>
-              </View>
-              <View style={styles.photoPreviewRow}>
-                {formData.crossfallInboundPhotos.photo1 && (
-                  <Image
-                    source={{ uri: formData.crossfallInboundPhotos.photo1 }}
-                    style={styles.photoPreview}
-                  />
-                )}
-                {formData.crossfallInboundPhotos.photo2 && (
-                  <Image
-                    source={{ uri: formData.crossfallInboundPhotos.photo2 }}
-                    style={styles.photoPreview}
-                  />
-                )}
-              </View>
-            </View>
-
-            <View style={styles.field}>
-              <Text style={styles.label}>Road Width Total (m)</Text>
-              <TextInput
-                style={styles.input}
-                value={formData.roadWidthTotal}
-                onChangeText={(value) =>
-                  setFormData((prev) => ({ ...prev, roadWidthTotal: value }))
-                }
-                keyboardType="decimal-pad"
-                placeholder="Enter total width in meters"
-              />
-            </View>
-
-            <View style={styles.field}>
-              <Text style={styles.label}>Comments</Text>
-              <TextInput
-                style={[styles.input, styles.commentInput]}
-                value={formData.comments}
-                onChangeText={(value) =>
-                  setFormData((prev) => ({ ...prev, comments: value }))
-                }
-                multiline
-                numberOfLines={3}
-                placeholder="Add any additional comments"
-              />
-            </View>
-          </View>
-
-          <Pressable style={styles.submitButton} onPress={handleSubmit}>
-            <Text style={styles.submitButtonText}>Submit Assessment</Text>
-          </Pressable>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+        </ScrollView>
+      </SafeAreaView>
+    </>
   );
 }
-
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#fff",
-  },
-  scrollView: {
-    flex: 1,
-  },
-  container: {
-    padding: 16,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: "#666",
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: "600",
-    color: "#000",
-    textAlign: "center",
-    marginVertical: 16,
-  },
-  section: {
-    marginBottom: 24,
-    backgroundColor: "#fff",
-    borderRadius: 8,
-    padding: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 16,
-  },
-  readOnlyField: {
-    marginBottom: 12,
-  },
-  readOnlyText: {
-    fontSize: 16,
-    color: "#666",
-    padding: 8,
-    backgroundColor: "#f5f5f5",
-    borderRadius: 4,
-  },
-  field: {
-    marginBottom: 16,
-  },
-  fieldRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: "500",
-    color: "#333",
-    marginBottom: 8,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    borderRadius: 8,
-    padding: Platform.OS === "ios" ? 12 : 10,
-    fontSize: 16,
-    backgroundColor: "#fff",
-  },
-  commentInput: {
-    height: 100,
-    textAlignVertical: "top",
-  },
-  photoRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 8,
-    gap: 8,
-  },
-  photoButton: {
-    flex: 1,
-    backgroundColor: "#007AFF",
-    padding: 12,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  photoButtonText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  photoPreviewRow: {
-    flexDirection: "row",
-    marginTop: 8,
-    gap: 8,
-  },
-  photoPreview: {
-    width: 100,
-    height: 100,
-    borderRadius: 8,
-    backgroundColor: "#f5f5f5",
-  },
-  submitButton: {
-    backgroundColor: "#007AFF",
-    padding: 16,
-    borderRadius: 8,
-    marginTop: 24,
-    marginBottom: 24,
-  },
-  submitButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-    textAlign: "center",
-  },
-});

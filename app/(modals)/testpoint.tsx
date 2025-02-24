@@ -1,5 +1,6 @@
 // screens/TestPointSelection.tsx
 import React, { useEffect, useState } from "react";
+import { testpointStyles } from "@/styles";
 import {
   View,
   Text,
@@ -10,7 +11,7 @@ import {
   StyleSheet,
   SafeAreaView,
 } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams, useNavigation } from "expo-router";
 import Papa from "papaparse";
 import * as FileSystem from "expo-file-system";
 
@@ -30,6 +31,8 @@ export default function TestPointSelection() {
     localPath: string;
   }>();
 
+  const navigation = useNavigation();
+
   const [testPoints, setTestPoints] = useState<TestPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
@@ -39,6 +42,16 @@ export default function TestPointSelection() {
   useEffect(() => {
     loadTestPoints();
   }, [localPath]);
+
+  useEffect(() => {
+    navigation.setOptions({
+      headerLeft: () => (
+        <Pressable onPress={() => router.back()} style={{ marginLeft: 8 }}>
+          <Text style={{ color: "#007AFF", fontSize: 16 }}>Projects</Text>
+        </Pressable>
+      ),
+    });
+  }, [navigation]);
 
   interface TestPointRow {
     "TEST POINT": string;
@@ -107,26 +120,29 @@ export default function TestPointSelection() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Select Test Point</Text>
-        <Text style={styles.subtitle}>{projectName}</Text>
+    <SafeAreaView style={testpointStyles.container}>
+      <View style={testpointStyles.header}>
+        <Text style={testpointStyles.title}>Select Test Point</Text>
+        <Text style={testpointStyles.subtitle}>{projectName}</Text>
       </View>
 
       {error ? (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
-          <Pressable style={styles.retryButton} onPress={loadTestPoints}>
-            <Text style={styles.retryButtonText}>Retry</Text>
+        <View style={testpointStyles.errorContainer}>
+          <Text style={testpointStyles.errorText}>{error}</Text>
+          <Pressable
+            style={testpointStyles.retryButton}
+            onPress={loadTestPoints}
+          >
+            <Text style={testpointStyles.retryButtonText}>Retry</Text>
           </Pressable>
         </View>
       ) : (
-        <View style={styles.content}>
+        <View style={testpointStyles.content}>
           <Pressable
-            style={styles.selectionButton}
+            style={testpointStyles.selectionButton}
             onPress={() => setModalVisible(true)}
           >
-            <Text style={styles.selectionButtonText}>
+            <Text style={testpointStyles.selectionButtonText}>
               {selectedPoint
                 ? `Test Point ${selectedPoint["TEST POINT"]}`
                 : "Select Test Point"}
@@ -139,21 +155,25 @@ export default function TestPointSelection() {
             presentationStyle="pageSheet"
             onRequestClose={() => setModalVisible(false)}
           >
-            <SafeAreaView style={styles.modalContainer}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Select Test Point</Text>
+            <SafeAreaView style={testpointStyles.modalContainer}>
+              <View style={testpointStyles.modalHeader}>
+                <Text style={testpointStyles.modalTitle}>
+                  Select Test Point
+                </Text>
                 <Pressable
-                  style={styles.closeButton}
+                  style={testpointStyles.closeButton}
                   onPress={() => setModalVisible(false)}
                 >
-                  <Text style={styles.closeButtonText}>Close</Text>
+                  <Text style={testpointStyles.closeButtonText}>Close</Text>
                 </Pressable>
               </View>
 
               {loading ? (
-                <View style={styles.loadingContainer}>
+                <View style={testpointStyles.loadingContainer}>
                   <ActivityIndicator size="large" color="#007AFF" />
-                  <Text style={styles.loadingText}>Loading test points...</Text>
+                  <Text style={testpointStyles.loadingText}>
+                    Loading test points...
+                  </Text>
                 </View>
               ) : (
                 <FlatList
@@ -161,19 +181,19 @@ export default function TestPointSelection() {
                   keyExtractor={(item) => item["TEST POINT"]}
                   renderItem={({ item }) => (
                     <Pressable
-                      style={styles.pointItem}
+                      style={testpointStyles.pointItem}
                       onPress={() => handlePointSelection(item)}
                     >
-                      <Text style={styles.pointTitle}>
+                      <Text style={testpointStyles.pointTitle}>
                         Test Point {item["TEST POINT"]}
                       </Text>
-                      <Text style={styles.pointDetails}>
+                      <Text style={testpointStyles.pointDetails}>
                         Line Item: {item["LINE ITEM"]}
                       </Text>
-                      <Text style={styles.pointDetails}>
+                      <Text style={testpointStyles.pointDetails}>
                         Chainage: {item["Chainage"]}
                       </Text>
-                      <Text style={styles.pointDetails}>
+                      <Text style={testpointStyles.pointDetails}>
                         Treatment: {item["TREATMENT TYPE"]}
                       </Text>
                     </Pressable>
@@ -187,116 +207,3 @@ export default function TestPointSelection() {
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#fff",
-  },
-  header: {
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E2E8F0",
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: "600",
-    color: "#1a1a1a",
-    marginBottom: 8,
-    textAlign: "center",
-  },
-  subtitle: {
-    fontSize: 16,
-    color: "#666",
-    textAlign: "center",
-  },
-  content: {
-    padding: 16,
-  },
-  errorContainer: {
-    padding: 16,
-    alignItems: "center",
-  },
-  errorText: {
-    color: "#DC2626",
-    fontSize: 16,
-    marginBottom: 16,
-    textAlign: "center",
-  },
-  retryButton: {
-    backgroundColor: "#007AFF",
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  retryButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  selectionButton: {
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    borderRadius: 8,
-    padding: 16,
-    marginBottom: 16,
-  },
-  selectionButtonText: {
-    fontSize: 16,
-    color: "#333",
-    textAlign: "center",
-  },
-  modalContainer: {
-    flex: 1,
-    backgroundColor: "#fff",
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E2E8F0",
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "600",
-    color: "#1a1a1a",
-  },
-  closeButton: {
-    padding: 8,
-  },
-  closeButtonText: {
-    color: "#007AFF",
-    fontSize: 16,
-    fontWeight: "500",
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: "#666",
-  },
-  pointItem: {
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E2E8F0",
-    backgroundColor: "#fff",
-  },
-  pointTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#1a1a1a",
-    marginBottom: 4,
-  },
-  pointDetails: {
-    fontSize: 14,
-    color: "#666",
-    marginTop: 2,
-  },
-});
