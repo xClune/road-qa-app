@@ -1,42 +1,118 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
   TextInput,
-  Button,
   StyleSheet,
   Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
   Image,
+  Switch,
+  ActivityIndicator,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
+import { useLocalSearchParams } from "expo-router";
+import { useQASubmission } from "@/hooks/useQASubmission";
+import { submitQAData, readRowFromCSV } from "@/services/sheetService";
 
-import { useQASubmission } from "../../hooks/useQASubmission";
-import { QAFormData, PhotoMetadata, LocationData } from "@/types/roadQuality";
-import { checkCSVContent } from "@/services/sheetService";
+interface FormData {
+  // Pre-filled fields (read-only)
+  testPoint: string;
+  lineItem: string;
+  treatmentType: string;
+  chainage: string;
+  latitude: string;
+  longitude: string;
 
-import { CSVTester } from "@/components/CsvTester";
+  // User input fields
+  testDate: string;
+  lineItemCompleted: boolean;
+  pavementThickness: string;
+  crossfallOutbound: string;
+  crossfallOutboundPhotos: {
+    photo1: string | null;
+    photo2: string | null;
+  };
+  crossfallInbound: string;
+  crossfallInboundPhotos: {
+    photo1: string | null;
+    photo2: string | null;
+  };
+  roadWidthTotal: string;
+  comments: string;
+}
 
 export default function QAScreen() {
-  // Initialize our state with the new data structure
-  const { submitAssessment, isOnline, testing } = useQASubmission();
-  const [formData, setFormData] = useState<QAFormData>({
-    roadName: "",
-    photo: null,
-    photoMetadata: null,
+  const params = useLocalSearchParams();
+  const { isOnline } = useQASubmission();
+  const [loading, setLoading] = useState(true);
+
+  const [formData, setFormData] = useState<FormData>({
+    // Initialize with empty values
+    testPoint: "",
+    lineItem: "",
+    treatmentType: "",
     chainage: "",
-    lhsCrossfall: "",
-    rhsCrossfall: "",
-    roadWidth: "",
+    latitude: "",
+    longitude: "",
+    testDate: new Date().toISOString().split("T")[0],
+    lineItemCompleted: false,
+    pavementThickness: "",
+    crossfallOutbound: "",
+    crossfallOutboundPhotos: { photo1: null, photo2: null },
+    crossfallInbound: "",
+    crossfallInboundPhotos: { photo1: null, photo2: null },
+    roadWidthTotal: "",
+    comments: "",
   });
 
-  // Handle photo capture with metadata
-  const handleCapturePicture = async () => {
+  // Load existing row data when component mounts
+  useEffect(() => {
+    const loadRowData = async () => {
+      try {
+        if (params.localPath && params.testPoint) {
+          const rowData = await readRowFromCSV(
+            params.localPath as string,
+            params.testPoint as string
+          );
+
+          // Update form with existing data
+          setFormData((prev) => ({
+            ...prev,
+            testPoint: rowData["TEST POINT"] || "",
+            lineItem: rowData["LINE ITEM"] || "",
+            treatmentType: rowData["TREATMENT TYPE"] || "",
+            chainage: rowData["Chainage"] || "",
+            latitude: rowData["Latitude"] || "",
+            longitude: rowData["Longitude"] || "",
+            pavementThickness: rowData["PAVEMENT THICKNESS (mm)"] || "",
+            crossfallOutbound: rowData["CROSSFALL O/B (%)"] || "",
+            crossfallInbound: rowData["CROSSFALL I/B (%)"] || "",
+            roadWidthTotal: rowData["ROAD WIDTH TOTAL (m)"] || "",
+            comments: rowData["COMMENT"] || "",
+            lineItemCompleted:
+              rowData["LINE ITEM COMPLETED (YES/NO)"] === "YES",
+          }));
+        }
+      } catch (error) {
+        console.error("Error loading row data:", error);
+        alert("Error loading test point data");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadRowData();
+  }, [params.localPath, params.testPoint]);
+
+  const handlePhotoCapture = async (
+    measurementType: "outbound" | "inbound",
+    photoNumber: 1 | 2
+  ) => {
     try {
-      // First, ensure we have camera permissions
       const cameraPermission =
         await ImagePicker.requestCameraPermissionsAsync();
       const locationPermission =
@@ -46,34 +122,31 @@ export default function QAScreen() {
         cameraPermission.status !== "granted" ||
         locationPermission.status !== "granted"
       ) {
-        alert(
-          "We need camera and location permissions to capture inspection data."
-        );
+        alert("Camera and location permissions are required");
         return;
       }
 
-      // Launch camera
       const result = await ImagePicker.launchCameraAsync({
         quality: 1,
         exif: true,
       });
 
       if (!result.canceled) {
-        // Get location at time of photo
         const location = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.High,
         });
 
         setFormData((prev) => ({
           ...prev,
-          photo: result.assets[0].uri,
-          photoMetadata: {
-            location: {
-              latitude: location.coords.latitude,
-              longitude: location.coords.longitude,
-              accuracy: location.coords.accuracy,
-            },
-            timestamp: new Date().toISOString(),
+          [`crossfall${
+            measurementType === "outbound" ? "Outbound" : "Inbound"
+          }Photos`]: {
+            ...prev[
+              `crossfall${
+                measurementType === "outbound" ? "Outbound" : "Inbound"
+              }Photos`
+            ],
+            [`photo${photoNumber}`]: result.assets[0].uri,
           },
         }));
       }
@@ -85,181 +158,220 @@ export default function QAScreen() {
     }
   };
 
-  // Test the app
   const handleSubmit = async () => {
-    // Validate form data
-    if (!formData.roadName) {
-      alert("Please provide a road name");
-      return;
-    }
+    try {
+      if (!params.localPath || !params.testPoint) {
+        alert("Missing file path or test point information");
+        return;
+      }
 
-    if (
-      !formData.chainage ||
-      !formData.lhsCrossfall ||
-      !formData.rhsCrossfall ||
-      !formData.roadWidth
-    ) {
-      alert("Please fill in all measurements");
-      return;
-    }
+      // Basic validation
+      if (
+        !formData.pavementThickness ||
+        !formData.crossfallOutbound ||
+        !formData.crossfallInbound ||
+        !formData.roadWidthTotal
+      ) {
+        alert("Please fill in all measurements");
+        return;
+      }
 
-    // Submit the assessment
-    const result = await submitAssessment(formData);
+      const result = await submitQAData(
+        params.localPath as string,
+        params.testPoint as string,
+        formData,
+        isOnline ?? false
+      );
 
-    // Show result to user
-    alert(result.message);
-
-    // Reset form if submission was successful
-    if (result.success) {
-      // Add CSV check here
-      const csvContent = await checkCSVContent();
-      console.log("Current CSV contents:", csvContent);
-
-      setFormData({
-        roadName: "",
-        photo: null,
-        photoMetadata: null,
-        chainage: "",
-        lhsCrossfall: "",
-        rhsCrossfall: "",
-        roadWidth: "",
-      });
+      if (result) {
+        alert(isOnline ? "Changes saved and synced" : "Changes saved locally");
+      }
+    } catch (error) {
+      alert(
+        "Error saving changes: " +
+          (error instanceof Error ? error.message : "Unknown error")
+      );
     }
   };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#007AFF" />
+        <Text style={styles.loadingText}>Loading test point data...</Text>
+      </View>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView style={styles.scrollView}>
         <View style={styles.container}>
-          {/* Testing UI only shown in development */}
-          {testing && (
-            <View style={styles.testingContainer}>
-              <Text style={styles.testingText}>
-                Testing Mode: {testing.isTestingOffline ? "Offline" : "Online"}
-              </Text>
-              <Pressable
-                style={styles.testingButton}
-                onPress={testing.toggleTestingOffline}
-              >
-                <Text style={styles.testingButtonText}>
-                  Toggle Online/Offline
-                </Text>
-              </Pressable>
-              <CSVTester />
+          <Text style={styles.title}>Quality Assurance Form</Text>
+
+          {/* Pre-filled Information Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Location Details</Text>
+            <View style={styles.readOnlyField}>
+              <Text style={styles.label}>Test Point</Text>
+              <Text style={styles.readOnlyText}>{formData.testPoint}</Text>
             </View>
-          )}
-          <Text style={styles.title}>Road Quality Assessment</Text>
+            <View style={styles.readOnlyField}>
+              <Text style={styles.label}>Line Item</Text>
+              <Text style={styles.readOnlyText}>{formData.lineItem}</Text>
+            </View>
+            <View style={styles.readOnlyField}>
+              <Text style={styles.label}>Treatment Type</Text>
+              <Text style={styles.readOnlyText}>{formData.treatmentType}</Text>
+            </View>
+            <View style={styles.readOnlyField}>
+              <Text style={styles.label}>Chainage</Text>
+              <Text style={styles.readOnlyText}>{formData.chainage}</Text>
+            </View>
+          </View>
 
-          {/* Photo Capture Section */}
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Road Name</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.roadName}
-              onChangeText={(value) =>
-                setFormData((prev) => ({ ...prev, roadName: value }))
-              }
-              placeholder="Enter road name"
-              autoCapitalize="words"
-            />
+          {/* Measurement Input Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Measurements</Text>
 
-            <Text style={styles.label}>Photo Documentation</Text>
-            <Pressable
-              style={styles.photoButton}
-              onPress={handleCapturePicture}
-            >
-              <Text style={styles.photoButtonText}>
-                {formData.photo ? "Retake Photo" : "Take Photo"}
-              </Text>
-            </Pressable>
+            <View style={styles.fieldRow}>
+              <Text style={styles.label}>Line Item Completed</Text>
+              <Switch
+                value={formData.lineItemCompleted}
+                onValueChange={(value) =>
+                  setFormData((prev) => ({ ...prev, lineItemCompleted: value }))
+                }
+              />
+            </View>
 
-            {formData.photo && (
-              <View style={styles.photoPreviewContainer}>
-                <Image
-                  source={{ uri: formData.photo }}
-                  style={styles.photoPreview}
-                />
-                {formData.photoMetadata?.location && (
-                  <Text style={styles.metadataText}>
-                    Location:{" "}
-                    {formData.photoMetadata.location.latitude.toFixed(6)},
-                    {formData.photoMetadata.location.longitude.toFixed(6)}
-                    {"\n"}Accuracy: ±
-                    {formData.photoMetadata.location.accuracy !== null
-                      ? formData.photoMetadata.location.accuracy.toFixed(1)
-                      : "N/A"}
-                    m
-                  </Text>
+            <View style={styles.field}>
+              <Text style={styles.label}>Pavement Thickness (mm)</Text>
+              <TextInput
+                style={styles.input}
+                value={formData.pavementThickness}
+                onChangeText={(value) =>
+                  setFormData((prev) => ({ ...prev, pavementThickness: value }))
+                }
+                keyboardType="decimal-pad"
+                placeholder="Enter thickness in mm"
+              />
+            </View>
+
+            {/* Outbound Crossfall Section */}
+            <View style={styles.field}>
+              <Text style={styles.label}>Crossfall Outbound (%)</Text>
+              <TextInput
+                style={styles.input}
+                value={formData.crossfallOutbound}
+                onChangeText={(value) =>
+                  setFormData((prev) => ({ ...prev, crossfallOutbound: value }))
+                }
+                keyboardType="decimal-pad"
+                placeholder="Enter outbound crossfall"
+              />
+              <View style={styles.photoRow}>
+                <Pressable
+                  style={styles.photoButton}
+                  onPress={() => handlePhotoCapture("outbound", 1)}
+                >
+                  <Text style={styles.photoButtonText}>Photo 1</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.photoButton}
+                  onPress={() => handlePhotoCapture("outbound", 2)}
+                >
+                  <Text style={styles.photoButtonText}>Photo 2</Text>
+                </Pressable>
+              </View>
+              <View style={styles.photoPreviewRow}>
+                {formData.crossfallOutboundPhotos.photo1 && (
+                  <Image
+                    source={{ uri: formData.crossfallOutboundPhotos.photo1 }}
+                    style={styles.photoPreview}
+                  />
+                )}
+                {formData.crossfallOutboundPhotos.photo2 && (
+                  <Image
+                    source={{ uri: formData.crossfallOutboundPhotos.photo2 }}
+                    style={styles.photoPreview}
+                  />
                 )}
               </View>
-            )}
+            </View>
+
+            {/* Inbound Crossfall Section */}
+            <View style={styles.field}>
+              <Text style={styles.label}>Crossfall Inbound (%)</Text>
+              <TextInput
+                style={styles.input}
+                value={formData.crossfallInbound}
+                onChangeText={(value) =>
+                  setFormData((prev) => ({ ...prev, crossfallInbound: value }))
+                }
+                keyboardType="decimal-pad"
+                placeholder="Enter inbound crossfall"
+              />
+              <View style={styles.photoRow}>
+                <Pressable
+                  style={styles.photoButton}
+                  onPress={() => handlePhotoCapture("inbound", 1)}
+                >
+                  <Text style={styles.photoButtonText}>Photo 1</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.photoButton}
+                  onPress={() => handlePhotoCapture("inbound", 2)}
+                >
+                  <Text style={styles.photoButtonText}>Photo 2</Text>
+                </Pressable>
+              </View>
+              <View style={styles.photoPreviewRow}>
+                {formData.crossfallInboundPhotos.photo1 && (
+                  <Image
+                    source={{ uri: formData.crossfallInboundPhotos.photo1 }}
+                    style={styles.photoPreview}
+                  />
+                )}
+                {formData.crossfallInboundPhotos.photo2 && (
+                  <Image
+                    source={{ uri: formData.crossfallInboundPhotos.photo2 }}
+                    style={styles.photoPreview}
+                  />
+                )}
+              </View>
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Road Width Total (m)</Text>
+              <TextInput
+                style={styles.input}
+                value={formData.roadWidthTotal}
+                onChangeText={(value) =>
+                  setFormData((prev) => ({ ...prev, roadWidthTotal: value }))
+                }
+                keyboardType="decimal-pad"
+                placeholder="Enter total width in meters"
+              />
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Comments</Text>
+              <TextInput
+                style={[styles.input, styles.commentInput]}
+                value={formData.comments}
+                onChangeText={(value) =>
+                  setFormData((prev) => ({ ...prev, comments: value }))
+                }
+                multiline
+                numberOfLines={3}
+                placeholder="Add any additional comments"
+              />
+            </View>
           </View>
 
-          {/* Measurement Fields */}
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Chainage (m)</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.chainage}
-              onChangeText={(value) =>
-                setFormData((prev) => ({ ...prev, chainage: value }))
-              }
-              placeholder="Enter chainage"
-              keyboardType="decimal-pad"
-            />
-          </View>
-
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>LHS Crossfall (%)</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.lhsCrossfall}
-              onChangeText={(value) =>
-                setFormData((prev) => ({ ...prev, lhsCrossfall: value }))
-              }
-              placeholder="Enter LHS crossfall"
-              keyboardType="decimal-pad"
-            />
-          </View>
-
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>RHS Crossfall (%)</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.rhsCrossfall}
-              onChangeText={(value) =>
-                setFormData((prev) => ({ ...prev, rhsCrossfall: value }))
-              }
-              placeholder="Enter RHS crossfall"
-              keyboardType="decimal-pad"
-            />
-          </View>
-
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Road Width (m)</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.roadWidth}
-              onChangeText={(value) =>
-                setFormData((prev) => ({ ...prev, roadWidth: value }))
-              }
-              placeholder="Enter road width"
-              keyboardType="decimal-pad"
-            />
-          </View>
-
-          <View style={styles.buttonContainer}>
-            <Pressable
-              style={[
-                styles.submitButton,
-                // !formData.photo && styles.submitButtonDisabled, // uncomment this line when photos are implemented
-              ]}
-              onPress={handleSubmit}
-              //   disabled={!formData.photo} // uncomment this line when photos are implemented
-            >
-              <Text style={styles.submitButtonText}>Submit</Text>
-            </Pressable>
-          </View>
+          <Pressable style={styles.submitButton} onPress={handleSubmit}>
+            <Text style={styles.submitButtonText}>Submit Assessment</Text>
+          </Pressable>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -275,8 +387,17 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   container: {
-    flex: 1,
     padding: 16,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: "#666",
   },
   title: {
     fontSize: 24,
@@ -285,7 +406,40 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginVertical: 16,
   },
-  formGroup: {
+  section: {
+    marginBottom: 24,
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    padding: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 16,
+  },
+  readOnlyField: {
+    marginBottom: 12,
+  },
+  readOnlyText: {
+    fontSize: 16,
+    color: "#666",
+    padding: 8,
+    backgroundColor: "#f5f5f5",
+    borderRadius: 4,
+  },
+  field: {
+    marginBottom: 16,
+  },
+  fieldRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 16,
   },
   label: {
@@ -302,65 +456,50 @@ const styles = StyleSheet.create({
     fontSize: 16,
     backgroundColor: "#fff",
   },
+  commentInput: {
+    height: 100,
+    textAlignVertical: "top",
+  },
+  photoRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 8,
+    gap: 8,
+  },
   photoButton: {
+    flex: 1,
     backgroundColor: "#007AFF",
+    padding: 12,
     borderRadius: 8,
-    padding: 16,
+    alignItems: "center",
   },
   photoButtonText: {
     color: "#fff",
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "600",
-    textAlign: "center",
   },
-  photoPreviewContainer: {
-    marginTop: 12,
+  photoPreviewRow: {
+    flexDirection: "row",
+    marginTop: 8,
+    gap: 8,
   },
   photoPreview: {
-    width: "100%",
-    height: 200,
+    width: 100,
+    height: 100,
     borderRadius: 8,
-    marginBottom: 8,
-  },
-  metadataText: {
-    fontSize: 12,
-    color: "#666",
-    marginTop: 4,
-  },
-  buttonContainer: {
-    marginTop: 24,
+    backgroundColor: "#f5f5f5",
   },
   submitButton: {
     backgroundColor: "#007AFF",
-    borderRadius: 8,
     padding: 16,
-  },
-  submitButtonDisabled: {
-    backgroundColor: "#999",
+    borderRadius: 8,
+    marginTop: 24,
+    marginBottom: 24,
   },
   submitButtonText: {
     color: "#fff",
     fontSize: 16,
     fontWeight: "600",
-    textAlign: "center",
-  },
-  testingContainer: {
-    padding: 12,
-    backgroundColor: "#f0f0f0",
-    marginBottom: 16,
-    borderRadius: 8,
-  },
-  testingText: {
-    fontSize: 14,
-    marginBottom: 8,
-  },
-  testingButton: {
-    backgroundColor: "#007AFF",
-    padding: 8,
-    borderRadius: 6,
-  },
-  testingButtonText: {
-    color: "#fff",
     textAlign: "center",
   },
 });

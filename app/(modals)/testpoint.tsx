@@ -9,12 +9,10 @@ import {
   ActivityIndicator,
   StyleSheet,
   SafeAreaView,
-  Alert, // NEW: Added for error handling
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import Papa from "papaparse";
 import * as FileSystem from "expo-file-system";
-import { LocalProjectService } from "@/services/localProjectService"; // NEW
 
 interface TestPoint {
   "TEST POINT": string;
@@ -42,30 +40,19 @@ export default function TestPointSelection() {
     loadTestPoints();
   }, [localPath]);
 
-  // MODIFIED: Enhanced error handling and file verification
+  interface TestPointRow {
+    "TEST POINT": string;
+    "LINE ITEM": string;
+    "TREATMENT TYPE": string;
+    Chainage: string;
+    Latitude: string;
+    Longitude: string;
+  }
+
   const loadTestPoints = async () => {
     try {
-      // First verify the file still exists
       const fileInfo = await FileSystem.getInfoAsync(localPath);
       if (!fileInfo.exists) {
-        // NEW: Check if project is still in metadata
-        const projects = await LocalProjectService.getLocalProjects();
-        const projectExists = projects.some(p => p.id === projectId);
-        
-        if (!projectExists) {
-          Alert.alert(
-            "Project Not Found",
-            "This project is no longer available offline. Please download it again.",
-            [
-              {
-                text: "Go Back",
-                onPress: () => router.back(),
-                style: "default"
-              }
-            ]
-          );
-          return;
-        }
         setError("Project file not found");
         setLoading(false);
         return;
@@ -73,12 +60,12 @@ export default function TestPointSelection() {
 
       const fileContent = await FileSystem.readAsStringAsync(localPath);
 
-      Papa.parse<TestPoint>(fileContent, {
+      Papa.parse<TestPointRow>(fileContent, {
         header: true,
         skipEmptyLines: true,
         complete: (results) => {
           // Sort test points by TEST POINT number
-          const sortedPoints = results.data.sort((a, b) => {
+          const sortedPoints = (results.data as TestPoint[]).sort((a, b) => {
             const aNum = parseFloat(a["TEST POINT"]);
             const bNum = parseFloat(b["TEST POINT"]);
             return aNum - bNum;
@@ -119,13 +106,6 @@ export default function TestPointSelection() {
     });
   };
 
-  // NEW: Added retry functionality
-  const handleRetry = async () => {
-    setError(null);
-    setLoading(true);
-    await loadTestPoints();
-  };
-
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -136,7 +116,7 @@ export default function TestPointSelection() {
       {error ? (
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>{error}</Text>
-          <Pressable style={styles.retryButton} onPress={handleRetry}>
+          <Pressable style={styles.retryButton} onPress={loadTestPoints}>
             <Text style={styles.retryButtonText}>Retry</Text>
           </Pressable>
         </View>
@@ -159,14 +139,54 @@ export default function TestPointSelection() {
             presentationStyle="pageSheet"
             onRequestClose={() => setModalVisible(false)}
           >
-            {/* Modal content remains the same */}
+            <SafeAreaView style={styles.modalContainer}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Select Test Point</Text>
+                <Pressable
+                  style={styles.closeButton}
+                  onPress={() => setModalVisible(false)}
+                >
+                  <Text style={styles.closeButtonText}>Close</Text>
+                </Pressable>
+              </View>
+
+              {loading ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color="#007AFF" />
+                  <Text style={styles.loadingText}>Loading test points...</Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={testPoints}
+                  keyExtractor={(item) => item["TEST POINT"]}
+                  renderItem={({ item }) => (
+                    <Pressable
+                      style={styles.pointItem}
+                      onPress={() => handlePointSelection(item)}
+                    >
+                      <Text style={styles.pointTitle}>
+                        Test Point {item["TEST POINT"]}
+                      </Text>
+                      <Text style={styles.pointDetails}>
+                        Line Item: {item["LINE ITEM"]}
+                      </Text>
+                      <Text style={styles.pointDetails}>
+                        Chainage: {item["Chainage"]}
+                      </Text>
+                      <Text style={styles.pointDetails}>
+                        Treatment: {item["TREATMENT TYPE"]}
+                      </Text>
+                    </Pressable>
+                  )}
+                />
+              )}
+            </SafeAreaView>
           </Modal>
         </View>
       )}
     </SafeAreaView>
   );
 }
-
 
 const styles = StyleSheet.create({
   container: {

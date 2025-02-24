@@ -1,78 +1,67 @@
-// app/(tabs)/index.tsx
 import { useEffect, useState } from "react";
-import { StyleSheet, Platform, View } from "react-native";
+import { StyleSheet, Platform, View, Pressable } from "react-native";
 import { router } from "expo-router";
-import * as WebBrowser from "expo-web-browser";
-import * as Google from "expo-auth-session/providers/google";
+import { GoogleSignin } from "@react-native-google-signin/google-signin";
 
 import ParallaxScrollView from "@/components/ParallaxScrollView";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { CSVFileDropdown } from "@/components/CSVFileDropdown";
 import { GoogleDriveService } from "@/services/googleDriveService";
-// NEW IMPORT
-import { LocalProjectService } from "@/services/localProjectService";
-
-WebBrowser.maybeCompleteAuthSession();
 
 export default function HomeScreen() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  // NEW STATE
-  const [offlineProjects, setOfflineProjects] = useState([]);
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    iosClientId: "913173809303-ajv61u37gm232vnssubbpdf3a2om9a4r.apps.googleusercontent.com",
-    webClientId: "913173809303-b3cutrjb7lpvaqmdc8c027jj657f41cn.apps.googleusercontent.com",
-    redirectUri: "https://auth.expo.io/@your-username/roadqa",
-  });
-
-  // NEW EFFECT
   useEffect(() => {
-    loadOfflineProjects();
+    GoogleSignin.configure({
+      webClientId:
+        "913173809303-b3cutrjb7lpvaqmdc8c027jj657f41cn.apps.googleusercontent.com",
+      iosClientId:
+        "913173809303-ajv61u37gm232vnssubbpdf3a2om9a4r.apps.googleusercontent.com",
+      scopes: ["https://www.googleapis.com/auth/drive.file"],
+    });
   }, []);
 
-  useEffect(() => {
-    if (response?.type === "success") {
-      setIsAuthenticated(true);
-      if (response.authentication?.accessToken) {
-        GoogleDriveService.initialize(response.authentication.accessToken);
-      }
-    }
-  }, [response]);
+  const handleSignIn = async () => {
+    if (isAuthenticating) return;
 
-  // NEW FUNCTION
-  const loadOfflineProjects = async () => {
-    const projects = await LocalProjectService.getLocalProjects();
-    setOfflineProjects(projects);
+    try {
+      setIsAuthenticating(true);
+      setError(null);
+
+      await GoogleSignin.hasPlayServices();
+      const userInfo = await GoogleSignin.signIn();
+      const tokens = await GoogleSignin.getTokens();
+
+      await GoogleDriveService.initialize(tokens.accessToken);
+      setIsAuthenticated(true);
+    } catch (e) {
+      const errorMessage =
+        e instanceof Error ? e.message : "An unknown error occurred";
+      setError(errorMessage);
+      console.error("Sign-in error:", e);
+    } finally {
+      setIsAuthenticating(false);
+    }
   };
 
-  // MODIFIED FUNCTION
+  const handleSignOut = async () => {
+    try {
+      await GoogleSignin.revokeAccess();
+      await GoogleSignin.signOut();
+      setIsAuthenticated(false);
+    } catch (e) {
+      console.error("Sign-out error:", e);
+    }
+  };
+
   const handleProjectSelect = async (
     file: { id: string; name: string; modifiedTime: string },
-    isFromDrive: boolean
+    localPath: string
   ) => {
     try {
-      let localPath;
-      
-      if (isFromDrive) {
-        // Download new project from Drive
-        localPath = await GoogleDriveService.downloadFile(file.id, file.name);
-        await LocalProjectService.saveProjectMetadata({
-          id: file.id,
-          name: file.name,
-          localPath,
-        });
-        await loadOfflineProjects(); // Refresh offline list
-      } else {
-        // Use existing local path
-        const projects = await LocalProjectService.getLocalProjects();
-        const project = projects.find(p => p.id === file.id);
-        if (!project) {
-          throw new Error("Local project not found");
-        }
-        localPath = project.localPath;
-      }
-
       router.push({
         pathname: "/(modals)/testpoint",
         params: {
@@ -97,49 +86,58 @@ export default function HomeScreen() {
         </ThemedText>
 
         <ThemedView style={styles.contentContainer}>
-          {/* NEW SECTION - Always show offline projects */}
-          {offlineProjects.length > 0 && (
-            <View style={styles.section}>
-              <ThemedText type="subtitle">Available Projects</ThemedText>
-              <CSVFileDropdown
-                files={offlineProjects}
-                onSelect={(file) => handleProjectSelect(file, false)}
-                label="Select Project"
-              />
-              <ThemedText style={styles.hint}>
-                These projects are available offline
-              </ThemedText>
-            </View>
-          )}
-
-          {/* MODIFIED SECTION - Only show when authenticated */}
-          {isAuthenticated ? (
-            <View style={styles.section}>
-              <ThemedText type="subtitle">Download New Project</ThemedText>
-              <CSVFileDropdown
-                onSelect={(file) => handleProjectSelect(file, true)}
-                label="Select from Drive"
-              />
-            </View>
-          ) : (
+          {!isAuthenticated ? (
             <View style={styles.authContainer}>
               <ThemedText style={styles.description}>
-                Sign in to download new projects
+                Please sign in with Google to access your project files.
               </ThemedText>
-              <ThemedText
-                style={styles.signInButton}
-                onPress={() => promptAsync()}
+              <Pressable
+                onPress={handleSignIn}
+                disabled={isAuthenticating}
+                style={({ pressed }) => [
+                  styles.signInButton,
+                  isAuthenticating && styles.signInButtonDisabled,
+                  pressed && styles.signInButtonPressed,
+                ]}
               >
-                Sign in with Google
-              </ThemedText>
+                <ThemedText style={styles.signInButtonText}>
+                  {isAuthenticating ? "Signing in..." : "Sign in with Google"}
+                </ThemedText>
+              </Pressable>
+              {error && (
+                <ThemedText style={styles.errorText}>{error}</ThemedText>
+              )}
             </View>
+          ) : (
+            <>
+              <ThemedText type="subtitle">Select Project</ThemedText>
+              <ThemedText style={styles.description}>
+                Choose a project from Google Drive to begin the road quality
+                assessment.
+              </ThemedText>
+
+              <CSVFileDropdown
+                onSelect={handleProjectSelect}
+                label="Select Project File"
+              />
+
+              <ThemedText style={styles.hint}>
+                Selected project data will be available offline for field
+                assessments.
+              </ThemedText>
+
+              <Pressable onPress={handleSignOut} style={styles.signOutButton}>
+                <ThemedText style={styles.signOutButtonText}>
+                  Sign Out
+                </ThemedText>
+              </Pressable>
+            </>
           )}
         </ThemedView>
       </ThemedView>
     </ParallaxScrollView>
   );
 }
-
 
 const styles = StyleSheet.create({
   container: {
