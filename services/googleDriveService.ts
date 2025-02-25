@@ -16,7 +16,7 @@ interface FileMetadata {
 export class GoogleDriveService {
   private static accessToken: string | null = null;
 
-  static async initialize(accessToken: string) {
+  static async initialize(accessToken: string | null) {
     this.accessToken = accessToken;
 
     // Ensure project directory exists
@@ -24,6 +24,8 @@ export class GoogleDriveService {
     if (!dirInfo.exists) {
       await FileSystem.makeDirectoryAsync(PROJECT_DIR, { intermediates: true });
     }
+
+    return true;
   }
 
   static async listCSVFiles() {
@@ -32,8 +34,12 @@ export class GoogleDriveService {
         throw new Error("Not authenticated");
       }
 
+      // Search for CSV files by either mime type OR file extension
+      const query = 'mimeType="text/csv" or name contains ".csv"';
       const response = await fetch(
-        'https://www.googleapis.com/drive/v3/files?q=mimeType="text/csv"&fields=files(id,name,modifiedTime)',
+        `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
+          query
+        )}&fields=files(id,name,modifiedTime,mimeType)`,
         {
           headers: {
             Authorization: `Bearer ${this.accessToken}`,
@@ -42,17 +48,27 @@ export class GoogleDriveService {
       );
 
       if (!response.ok) {
-        throw new Error("Failed to fetch CSV files");
+        const errorText = await response.text();
+        console.error(
+          `GoogleDriveService: API error ${response.status}:`,
+          errorText
+        );
+        throw new Error(`Failed to fetch CSV files: ${response.status}`);
       }
 
       const data = await response.json();
+      console.log(
+        `GoogleDriveService: Found ${
+          data.files?.length || 0
+        } files matching query`
+      );
+
       return data.files;
     } catch (error) {
-      console.error("Error listing CSV files:", error);
+      console.error("GoogleDriveService: Error listing CSV files:", error);
       throw error;
     }
   }
-
   static async downloadFile(fileId: string, fileName: string): Promise<string> {
     try {
       if (!this.accessToken) {
@@ -175,6 +191,44 @@ export class GoogleDriveService {
       await AsyncStorage.setItem(METADATA_KEY, JSON.stringify(keepFiles));
     } catch (error) {
       console.error("Error cleaning up files:", error);
+    }
+  }
+
+  // Add to services/googleDriveService.ts
+
+  static async listLocalFiles() {
+    try {
+      const metadata = await AsyncStorage.getItem(METADATA_KEY);
+      if (!metadata) return [];
+
+      const files = JSON.parse(metadata);
+      const localFiles = [];
+
+      // Convert object to array and filter to ensure files exist
+      for (const fileId in files) {
+        const file = files[fileId];
+        // Check if the file actually exists locally
+        const fileInfo = await FileSystem.getInfoAsync(file.localPath);
+        if (fileInfo.exists) {
+          localFiles.push({
+            id: file.id,
+            name: file.name,
+            modifiedTime: file.modifiedTime,
+            localPath: file.localPath,
+            lastDownloaded: file.lastDownloaded,
+          });
+        }
+      }
+
+      // Sort by last downloaded time, newest first
+      return localFiles.sort(
+        (a, b) =>
+          new Date(b.lastDownloaded).getTime() -
+          new Date(a.lastDownloaded).getTime()
+      );
+    } catch (error) {
+      console.error("Error listing local files:", error);
+      return [];
     }
   }
 }

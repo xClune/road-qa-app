@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { csvFileDropdownStyles } from "@/styles";
+// components/CSVFileDropdown.tsx - Updated version
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -11,7 +11,6 @@ import {
   SafeAreaView,
 } from "react-native";
 import { GoogleDriveService } from "../services/googleDriveService";
-import { useNetInfo } from "@react-native-community/netinfo";
 
 interface CSVFile {
   id: string;
@@ -22,53 +21,20 @@ interface CSVFile {
 interface Props {
   onSelect: (file: CSVFile, localPath: string) => void;
   label?: string;
+  files?: CSVFile[]; // New prop to accept files directly
+  loading?: boolean; // New prop to handle loading state
 }
 
 export const CSVFileDropdown: React.FC<Props> = ({
   onSelect,
   label = "Select Project",
+  files = [], // Default to empty array
+  loading = false, // Default to not loading
 }) => {
-  const [files, setFiles] = useState<CSVFile[]>([]);
-  const [loading, setLoading] = useState(false);
   const [downloadingFile, setDownloadingFile] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedFile, setSelectedFile] = useState<CSVFile | null>(null);
-  const netInfo = useNetInfo();
-
-  useEffect(() => {
-    console.log("Network status:", netInfo);
-    fetchFiles();
-  }, []);
-
-  useEffect(() => {
-    fetchFiles();
-    // Clean up old files on component mount
-    GoogleDriveService.cleanupOldFiles();
-  }, []);
-
-  // Modify the network check
-  const fetchFiles = async () => {
-    // Don't return early if network status is unknown
-    if (netInfo.isConnected === false) {
-      // Only block if definitely offline
-      setError("No internet connection. Showing cached files.");
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const csvFiles = await GoogleDriveService.listCSVFiles();
-      setFiles(csvFiles);
-    } catch (err) {
-      setError("Failed to load project files. Please try again.");
-      console.error("Error fetching CSV files:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleSelect = async (file: CSVFile) => {
     setDownloadingFile(true);
@@ -91,18 +57,18 @@ export const CSVFileDropdown: React.FC<Props> = ({
   };
 
   return (
-    <View style={csvFileDropdownStyles.container}>
-      <Text style={csvFileDropdownStyles.label}>{label}</Text>
+    <View style={styles.container}>
+      <Text style={styles.label}>{label}</Text>
       <Pressable
-        style={csvFileDropdownStyles.dropdownButton}
+        style={styles.dropdownButton}
         onPress={() => setModalVisible(true)}
       >
-        <Text style={csvFileDropdownStyles.dropdownButtonText}>
+        <Text style={styles.dropdownButtonText}>
           {selectedFile ? selectedFile.name : "Select a project"}
         </Text>
       </Pressable>
 
-      {error && <Text style={csvFileDropdownStyles.errorText}>{error}</Text>}
+      {error && <Text style={styles.errorText}>{error}</Text>}
 
       <Modal
         visible={modalVisible}
@@ -110,44 +76,51 @@ export const CSVFileDropdown: React.FC<Props> = ({
         presentationStyle="pageSheet"
         onRequestClose={() => setModalVisible(false)}
       >
-        <SafeAreaView style={csvFileDropdownStyles.modalContainer}>
-          <View style={csvFileDropdownStyles.modalHeader}>
-            <Text style={csvFileDropdownStyles.modalTitle}>Select Project</Text>
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Select Project</Text>
             <Pressable
-              style={csvFileDropdownStyles.closeButton}
+              style={styles.closeButton}
               onPress={() => setModalVisible(false)}
             >
-              <Text style={csvFileDropdownStyles.closeButtonText}>Close</Text>
+              <Text style={styles.closeButtonText}>Close</Text>
             </Pressable>
           </View>
 
           {loading || downloadingFile ? (
-            <View style={csvFileDropdownStyles.loadingContainer}>
+            <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color="#007AFF" />
-              <Text style={csvFileDropdownStyles.loadingText}>
+              <Text style={styles.loadingText}>
                 {downloadingFile
                   ? "Downloading project file..."
                   : "Loading projects..."}
               </Text>
             </View>
           ) : (
-            <FlatList
-              data={files}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <Pressable
-                  style={csvFileDropdownStyles.fileItem}
-                  onPress={() => handleSelect(item)}
-                >
-                  <Text style={csvFileDropdownStyles.fileName}>
-                    {item.name}
-                  </Text>
-                  <Text style={csvFileDropdownStyles.fileDate}>
-                    Modified: {new Date(item.modifiedTime).toLocaleDateString()}
-                  </Text>
-                </Pressable>
+            <>
+              {files.length === 0 ? (
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyText}>No project files found</Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={files}
+                  keyExtractor={(item) => item.id}
+                  renderItem={({ item }) => (
+                    <Pressable
+                      style={styles.fileItem}
+                      onPress={() => handleSelect(item)}
+                    >
+                      <Text style={styles.fileName}>{item.name}</Text>
+                      <Text style={styles.fileDate}>
+                        Modified:{" "}
+                        {new Date(item.modifiedTime).toLocaleDateString()}
+                      </Text>
+                    </Pressable>
+                  )}
+                />
               )}
-            />
+            </>
           )}
         </SafeAreaView>
       </Modal>
@@ -156,7 +129,24 @@ export const CSVFileDropdown: React.FC<Props> = ({
 };
 
 const styles = StyleSheet.create({
-  modalHeader: { flexDirection: "row", justifyContent: "space-between" },
+  // Keep the existing styles...
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: "#666",
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
+  },
   container: {
     marginBottom: 16,
   },
@@ -184,9 +174,7 @@ const styles = StyleSheet.create({
   },
   modalContainer: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    backgroundColor: "#fff",
   },
   modalContent: {
     backgroundColor: "#fff",
@@ -198,7 +186,6 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 20,
     fontWeight: "600",
-    marginBottom: 16,
     textAlign: "center",
   },
   fileItem: {
@@ -216,15 +203,22 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   closeButton: {
-    marginTop: 16,
-    backgroundColor: "#007AFF",
-    padding: 12,
-    borderRadius: 8,
-    alignItems: "center",
+    padding: 8,
   },
   closeButtonText: {
-    color: "#fff",
+    color: "#007AFF",
     fontSize: 16,
     fontWeight: "600",
+  },
+  emptyContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: "#666",
+    textAlign: "center",
   },
 });
