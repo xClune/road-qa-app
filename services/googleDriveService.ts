@@ -3,6 +3,7 @@ import * as FileSystem from "expo-file-system";
 
 const METADATA_KEY = "project_files_metadata";
 const PROJECT_DIR = `${FileSystem.documentDirectory}projects/`;
+const TOKEN_STORAGE_KEY = "google_drive_access_token";
 
 interface FileMetadata {
   id: string;
@@ -17,7 +18,23 @@ export class GoogleDriveService {
   private static accessToken: string | null = null;
 
   static async initialize(accessToken: string | null) {
+    // Update the in-memory token
     this.accessToken = accessToken;
+
+    // If token provided, save to persistent storage
+    if (accessToken) {
+      await AsyncStorage.setItem(TOKEN_STORAGE_KEY, accessToken);
+    } else {
+      // Try to load from persistent storage if not provided
+      try {
+        const storedToken = await AsyncStorage.getItem(TOKEN_STORAGE_KEY);
+        if (storedToken) {
+          this.accessToken = storedToken;
+        }
+      } catch (error) {
+        console.error("Error loading stored token:", error);
+      }
+    }
 
     // Ensure project directory exists
     const dirInfo = await FileSystem.getInfoAsync(PROJECT_DIR);
@@ -28,24 +45,134 @@ export class GoogleDriveService {
     return true;
   }
 
-  static async listCSVFiles() {
+  static async ensureAuthenticated(): Promise<boolean> {
+    // If we already have a token, assume it's valid for now
+    if (this.accessToken) {
+      return true;
+    }
+
+    // Try to get token from persistent storage first
     try {
-      if (!this.accessToken) {
-        throw new Error("Not authenticated");
+      const storedToken = await AsyncStorage.getItem(TOKEN_STORAGE_KEY);
+      if (storedToken) {
+        this.accessToken = storedToken;
+        return true;
+      }
+    } catch (error) {
+      console.error("Error loading stored token:", error);
+    }
+
+    // If no stored token, try to get fresh token from GoogleSignin
+    try {
+      // Import GoogleSignin directly from the package
+      const GoogleSignin =
+        require("@react-native-google-signin/google-signin").GoogleSignin;
+
+      // Check if GoogleSignin is properly initialized
+      if (!GoogleSignin || typeof GoogleSignin.isSignedIn !== "function") {
+        console.error("GoogleSignin is not properly initialized");
+        return false;
       }
 
+      const isSignedIn = await GoogleSignin.isSignedIn();
+
+      if (isSignedIn) {
+        const tokens = await GoogleSignin.getTokens();
+        if (tokens.accessToken) {
+          this.accessToken = tokens.accessToken;
+          await AsyncStorage.setItem(TOKEN_STORAGE_KEY, tokens.accessToken);
+          return true;
+        }
+      }
+    } catch (error) {
+      console.error("Error refreshing Google token:", error);
+    }
+
+    return false;
+  }
+
+  static async makeAuthenticatedRequest(
+    url: string,
+    options: RequestInit = {}
+  ): Promise<Response> {
+    // First ensure we have a token
+    await this.ensureAuthenticated();
+
+    // If we still don't have a token after trying to refresh, fail early
+    if (!this.accessToken) {
+      throw new Error("Not authenticated");
+    }
+
+    // Clone the options to avoid mutating the input
+    const requestOptions = {
+      ...options,
+      headers: {
+        ...(options.headers || {}),
+        Authorization: `Bearer ${this.accessToken}`,
+      },
+    };
+
+    // Make the request
+    let response = await fetch(url, requestOptions);
+
+    // If unauthorized, our token might be expired
+    if (response.status === 401) {
+      console.log("API request received 401 - attempting token refresh");
+
+      // Clear current token
+      this.accessToken = null;
+      await AsyncStorage.removeItem(TOKEN_STORAGE_KEY);
+
+      // Try to get a fresh token from GoogleSignin
+      try {
+        // Import GoogleSignin directly
+        const GoogleSignin =
+          require("@react-native-google-signin/google-signin").GoogleSignin;
+
+        // Check if GoogleSignin is properly initialized
+        if (!GoogleSignin || typeof GoogleSignin.isSignedIn !== "function") {
+          console.error("GoogleSignin is not properly initialized");
+          return response;
+        }
+
+        // Check if still signed in
+        const isSignedIn = await GoogleSignin.isSignedIn();
+        if (isSignedIn) {
+          // Try to get fresh tokens
+          await GoogleSignin.clearCachedAccessToken();
+          const tokens = await GoogleSignin.getTokens();
+
+          if (tokens.accessToken) {
+            // Update our token
+            this.accessToken = tokens.accessToken;
+            await AsyncStorage.setItem(TOKEN_STORAGE_KEY, tokens.accessToken);
+
+            // Retry the request with new token
+            requestOptions.headers.Authorization = `Bearer ${this.accessToken}`;
+            response = await fetch(url, requestOptions);
+
+            console.log("API request retried with refreshed token");
+          }
+        }
+      } catch (refreshError) {
+        console.error("Failed to refresh token:", refreshError);
+        // Let the original 401 response propagate
+      }
+    }
+
+    return response;
+  }
+
+  static async listCSVFiles() {
+    try {
       // Search for CSV files by either mime type OR file extension
       const query = 'mimeType="text/csv" or name contains ".csv"';
-      const response = await fetch(
-        `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
-          query
-        )}&fields=files(id,name,modifiedTime,mimeType)`,
-        {
-          headers: {
-            Authorization: `Bearer ${this.accessToken}`,
-          },
-        }
-      );
+      const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
+        query
+      )}&fields=files(id,name,modifiedTime,mimeType)`;
+
+      // Use the new utility method instead of direct fetch
+      const response = await this.makeAuthenticatedRequest(url);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -69,12 +196,9 @@ export class GoogleDriveService {
       throw error;
     }
   }
+
   static async downloadFile(fileId: string, fileName: string): Promise<string> {
     try {
-      if (!this.accessToken) {
-        throw new Error("Not authenticated");
-      }
-
       // Check if we already have this file
       const metadata = await this.getFileMetadata(fileId);
       if (metadata) {
@@ -90,14 +214,9 @@ export class GoogleDriveService {
         }
       }
 
-      const response = await fetch(
-        `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
-        {
-          headers: {
-            Authorization: `Bearer ${this.accessToken}`,
-          },
-        }
-      );
+      // Use the new utility method
+      const url = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
+      const response = await this.makeAuthenticatedRequest(url);
 
       if (!response.ok) {
         throw new Error("Failed to download file");
@@ -194,8 +313,6 @@ export class GoogleDriveService {
     }
   }
 
-  // Add to services/googleDriveService.ts
-
   static async listLocalFiles() {
     try {
       const metadata = await AsyncStorage.getItem(METADATA_KEY);
@@ -232,23 +349,12 @@ export class GoogleDriveService {
     }
   }
 
-  /**
-   * Uploads a file to Google Drive
-   * @param filePath Local path to the file
-   * @param driveFileId Google Drive file ID (if updating existing file)
-   * @param fileName Name for the file in Google Drive
-   * @returns Object with file ID and status
-   */
   static async uploadFile(
     filePath: string,
     driveFileId: string | null = null,
     fileName: string | null = null
   ): Promise<{ fileId: string; status: string }> {
     try {
-      if (!this.accessToken) {
-        throw new Error("Not authenticated");
-      }
-
       // Read the file content
       const fileContent = await FileSystem.readAsStringAsync(filePath, {
         encoding: FileSystem.EncodingType.UTF8,
@@ -266,17 +372,17 @@ export class GoogleDriveService {
 
       if (driveFileId) {
         // Update existing file
-        const response = await fetch(
-          `https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=multipart`,
-          {
-            method: "PATCH",
-            headers: {
-              Authorization: `Bearer ${this.accessToken}`,
-              "Content-Type": "multipart/form-data;boundary=boundary",
-            },
-            body: this.createMultipartBody(metadata, fileContent),
-          }
-        );
+        const url = `https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=multipart`;
+        const options = {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "multipart/form-data;boundary=boundary",
+          },
+          body: this.createMultipartBody(metadata, fileContent),
+        };
+
+        // Use the utility method
+        const response = await this.makeAuthenticatedRequest(url, options);
 
         if (!response.ok) {
           const errorData = await response.json();
@@ -289,17 +395,18 @@ export class GoogleDriveService {
         return { fileId: driveFileId, status: "updated" };
       } else {
         // Create new file
-        const response = await fetch(
-          "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${this.accessToken}`,
-              "Content-Type": "multipart/form-data;boundary=boundary",
-            },
-            body: this.createMultipartBody(metadata, fileContent),
-          }
-        );
+        const url =
+          "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart";
+        const options = {
+          method: "POST",
+          headers: {
+            "Content-Type": "multipart/form-data;boundary=boundary",
+          },
+          body: this.createMultipartBody(metadata, fileContent),
+        };
+
+        // Use the utility method
+        const response = await this.makeAuthenticatedRequest(url, options);
 
         if (!response.ok) {
           const errorData = await response.json();
@@ -351,7 +458,9 @@ export class GoogleDriveService {
     Array<{ success: boolean; fileId?: string; error?: string }>
   > {
     try {
-      if (!this.accessToken) {
+      // First ensure we have a valid token
+      const authenticated = await this.ensureAuthenticated();
+      if (!authenticated) {
         console.log("Not authenticated, skipping sync queue processing");
         return [];
       }
@@ -488,7 +597,9 @@ export class GoogleDriveService {
     localPath: string
   ): Promise<{ fileId: string; status: string }> {
     try {
-      if (!this.accessToken) {
+      // First ensure we have a valid token
+      const authenticated = await this.ensureAuthenticated();
+      if (!authenticated) {
         throw new Error("Not authenticated");
       }
 

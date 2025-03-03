@@ -27,6 +27,10 @@ export default function RootLayout() {
     if (loaded) {
       SplashScreen.hideAsync();
 
+      // Initialize GoogleSignin
+      const { AuthService } = require("../services/authService");
+      AuthService.initializeGoogleSignin();
+
       // Initialize sync service when app loads
       SyncService.initialize();
     }

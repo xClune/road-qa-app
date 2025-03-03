@@ -204,27 +204,21 @@ export class SyncService {
    * Check if user is authenticated with Google Drive
    * @returns true if authenticated
    */
-  private static async checkAuthentication(): Promise<boolean> {
+  static async checkAuthentication(): Promise<boolean> {
     try {
-      // This will depend on how you're handling authentication
-      // For GoogleSignin:
-      const {
-        GoogleSignin,
-      } = require("@react-native-google-signin/google-signin");
-      const isSignedIn = await GoogleSignin.isSignedIn();
+      // Import the AuthService
+      const { AuthService } = require("../services/authService");
 
+      const isSignedIn = await AuthService.isSignedIn();
       if (isSignedIn) {
-        // Check if token is still valid or refresh it
         try {
-          await GoogleSignin.hasPlayServices();
-          const tokens = await GoogleSignin.getTokens();
+          const tokens = await AuthService.getTokens();
           return !!tokens.accessToken;
         } catch (tokenError) {
           console.error("Error getting Google tokens:", tokenError);
           return false;
         }
       }
-
       return false;
     } catch (error) {
       console.error("Error checking authentication:", error);
