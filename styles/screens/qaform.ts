@@ -125,4 +125,8 @@ export const qaFormStyles = StyleSheet.create({
     fontWeight: "600",
     textAlign: "center",
   },
+  submitButtonDisabled: {
+    opacity: 0.6,
+    backgroundColor: "#ccc",
+  },
 });

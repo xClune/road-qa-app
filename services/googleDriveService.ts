@@ -231,4 +231,279 @@ export class GoogleDriveService {
       return [];
     }
   }
+
+  /**
+   * Uploads a file to Google Drive
+   * @param filePath Local path to the file
+   * @param driveFileId Google Drive file ID (if updating existing file)
+   * @param fileName Name for the file in Google Drive
+   * @returns Object with file ID and status
+   */
+  static async uploadFile(
+    filePath: string,
+    driveFileId: string | null = null,
+    fileName: string | null = null
+  ): Promise<{ fileId: string; status: string }> {
+    try {
+      if (!this.accessToken) {
+        throw new Error("Not authenticated");
+      }
+
+      // Read the file content
+      const fileContent = await FileSystem.readAsStringAsync(filePath, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+
+      // Determine the file name if not provided
+      const actualFileName =
+        fileName || filePath.split("/").pop() || "updated_file.csv";
+
+      // Set up request metadata
+      const metadata = {
+        name: actualFileName,
+        mimeType: "text/csv",
+      };
+
+      if (driveFileId) {
+        // Update existing file
+        const response = await fetch(
+          `https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=multipart`,
+          {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${this.accessToken}`,
+              "Content-Type": "multipart/form-data;boundary=boundary",
+            },
+            body: this.createMultipartBody(metadata, fileContent),
+          }
+        );
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          console.error("Error updating file on Drive:", errorData);
+          throw new Error(`Failed to update file: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log("File updated successfully:", data);
+        return { fileId: driveFileId, status: "updated" };
+      } else {
+        // Create new file
+        const response = await fetch(
+          "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${this.accessToken}`,
+              "Content-Type": "multipart/form-data;boundary=boundary",
+            },
+            body: this.createMultipartBody(metadata, fileContent),
+          }
+        );
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          console.error("Error creating file on Drive:", errorData);
+          throw new Error(`Failed to create file: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log("File created successfully:", data);
+        return { fileId: data.id, status: "created" };
+      }
+    } catch (error) {
+      console.error("Error uploading file to Google Drive:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Creates a multipart body for file upload
+   * @param metadata File metadata
+   * @param content File content
+   * @returns Multipart body string
+   */
+  private static createMultipartBody(metadata: any, content: string): string {
+    const metadataPart = JSON.stringify(metadata);
+
+    // Boundary used to separate parts in multipart request
+    const boundary = "boundary";
+
+    // Construct multipart body with metadata and file content
+    return [
+      `--${boundary}`,
+      "Content-Type: application/json; charset=UTF-8",
+      "",
+      metadataPart,
+      `--${boundary}`,
+      "Content-Type: text/csv",
+      "",
+      content,
+      `--${boundary}--`,
+    ].join("\r\n");
+  }
+
+  /**
+   * Processes the sync queue and uploads pending changes
+   * @returns Array of results for each processed item
+   */
+  static async processSyncQueue(): Promise<
+    Array<{ success: boolean; fileId?: string; error?: string }>
+  > {
+    try {
+      if (!this.accessToken) {
+        console.log("Not authenticated, skipping sync queue processing");
+        return [];
+      }
+
+      const queueKey = "qa_submission_queue";
+      const queueString = await AsyncStorage.getItem(queueKey);
+
+      if (!queueString) {
+        console.log("No items in sync queue");
+        return [];
+      }
+
+      const queue = JSON.parse(queueString);
+      const results = [];
+      const newQueue = [];
+
+      // Process each item in the queue
+      for (const item of queue) {
+        try {
+          // Check if the file exists
+          const fileInfo = await FileSystem.getInfoAsync(item.filePath);
+          if (!fileInfo.exists) {
+            results.push({
+              success: false,
+              error: `File not found: ${item.filePath}`,
+            });
+            continue;
+          }
+
+          // Extract the Drive file ID from metadata
+          const fileName = item.filePath.split("/").pop();
+          const metadata = await this.getFileMetadataByPath(item.filePath);
+
+          if (!metadata || !metadata.id) {
+            results.push({
+              success: false,
+              error: `Cannot find Drive file ID for: ${item.filePath}`,
+            });
+            // Keep in queue for later retry
+            newQueue.push(item);
+            continue;
+          }
+
+          // Upload the file
+          const uploadResult = await this.uploadFile(
+            item.filePath,
+            metadata.id,
+            metadata.name
+          );
+
+          results.push({
+            success: true,
+            fileId: uploadResult.fileId,
+          });
+
+          console.log(`Synced changes for test point ${item.testPoint}`);
+        } catch (error) {
+          console.error("Error processing queue item:", error);
+          results.push({
+            success: false,
+            error: error instanceof Error ? error.message : "Unknown error",
+          });
+          // Keep failed items in the queue for retry
+          newQueue.push(item);
+        }
+      }
+
+      // Update the queue with remaining items
+      if (newQueue.length > 0) {
+        await AsyncStorage.setItem(queueKey, JSON.stringify(newQueue));
+      } else {
+        await AsyncStorage.removeItem(queueKey);
+      }
+
+      return results;
+    } catch (error) {
+      console.error("Error processing sync queue:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get file metadata by local file path
+   * @param localPath Path to local file
+   * @returns FileMetadata or null if not found
+   */
+  private static async getFileMetadataByPath(
+    localPath: string
+  ): Promise<FileMetadata | null> {
+    try {
+      const metadata = await AsyncStorage.getItem(METADATA_KEY);
+      if (!metadata) return null;
+
+      const files: Record<string, FileMetadata> = JSON.parse(metadata);
+
+      // Find the file by path
+      for (const fileId in files) {
+        if (files[fileId].localPath === localPath) {
+          return files[fileId];
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.error("Error getting file metadata by path:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Returns the number of items in the sync queue
+   * @returns Number of pending sync items
+   */
+  static async getSyncQueueSize(): Promise<number> {
+    try {
+      const queueKey = "qa_submission_queue";
+      const queueString = await AsyncStorage.getItem(queueKey);
+      if (!queueString) return 0;
+
+      const queue = JSON.parse(queueString);
+      return queue.length;
+    } catch (error) {
+      console.error("Error getting sync queue size:", error);
+      return 0;
+    }
+  }
+
+  /**
+   * Upload a local file to Google Drive using its local path
+   * @param localPath The local path of the file to upload
+   * @returns Result of the upload operation
+   */
+  static async uploadFileByPath(
+    localPath: string
+  ): Promise<{ fileId: string; status: string }> {
+    try {
+      if (!this.accessToken) {
+        throw new Error("Not authenticated");
+      }
+
+      // Use the private method to get metadata
+      const metadata = await this.getFileMetadataByPath(localPath);
+
+      if (!metadata || !metadata.id) {
+        throw new Error("File metadata not found for path: " + localPath);
+      }
+
+      // Upload the file using the existing method
+      return await this.uploadFile(localPath, metadata.id, metadata.name);
+    } catch (error) {
+      console.error("Error uploading file by path:", error);
+      throw error;
+    }
+  }
 }

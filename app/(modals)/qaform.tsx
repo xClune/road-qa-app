@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Stack } from "expo-router";
+import { router, Stack } from "expo-router";
 import { qaFormStyles } from "@/styles";
 import {
   View,
@@ -19,6 +19,7 @@ import * as Location from "expo-location";
 import { useLocalSearchParams } from "expo-router";
 import { useQASubmission } from "@/hooks/useQASubmission";
 import { submitQAData, readRowFromCSV } from "@/services/sheetService";
+import { SyncStatusPanel } from "@/components/SyncStatusPanel";
 
 interface FormData {
   // Pre-filled fields (read-only)
@@ -51,6 +52,7 @@ export default function QAScreen() {
   const params = useLocalSearchParams();
   const { isOnline } = useQASubmission();
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [formData, setFormData] = useState<FormData>({
     // Initialize with empty values
@@ -178,6 +180,9 @@ export default function QAScreen() {
         return;
       }
 
+      // Show loading spinner while submitting
+      setIsSubmitting(true);
+
       const result = await submitQAData(
         params.localPath as string,
         params.testPoint as string,
@@ -185,25 +190,22 @@ export default function QAScreen() {
         isOnline ?? false
       );
 
-      if (result) {
-        alert(isOnline ? "Changes saved and synced" : "Changes saved locally");
+      if (result.success) {
+        alert(result.message);
+        // Navigate back to test point selection screen
+        router.back();
+      } else {
+        alert(result.message);
       }
     } catch (error) {
       alert(
         "Error saving changes: " +
           (error instanceof Error ? error.message : "Unknown error")
       );
+    } finally {
+      setIsSubmitting(false);
     }
   };
-
-  if (loading) {
-    return (
-      <View style={qaFormStyles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={qaFormStyles.loadingText}>Loading test point data...</Text>
-      </View>
-    );
-  }
 
   return (
     <>
@@ -398,12 +400,37 @@ export default function QAScreen() {
               </View>
             </View>
 
-            <Pressable style={qaFormStyles.submitButton} onPress={handleSubmit}>
-              <Text style={qaFormStyles.submitButtonText}>
-                Submit Assessment
-              </Text>
+            <Pressable
+              style={[
+                qaFormStyles.submitButton,
+                isSubmitting && qaFormStyles.submitButtonDisabled,
+              ]}
+              onPress={handleSubmit}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? (
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <Text
+                    style={[qaFormStyles.submitButtonText, { marginLeft: 8 }]}
+                  >
+                    Submitting...
+                  </Text>
+                </View>
+              ) : (
+                <Text style={qaFormStyles.submitButtonText}>
+                  Submit Assessment
+                </Text>
+              )}
             </Pressable>
           </View>
+          <SyncStatusPanel />
         </ScrollView>
       </SafeAreaView>
     </>

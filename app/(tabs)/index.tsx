@@ -16,6 +16,10 @@ import { ThemedView } from "@/components/ThemedView";
 import { GoogleDriveService } from "@/services/googleDriveService";
 import { CSVFileDropdown } from "@/components/CSVFileDropdown";
 
+import { SyncStatusPanel } from "@/components/SyncStatusPanel";
+
+import { useNetInfo } from "@react-native-community/netinfo";
+
 // Define types for our file objects
 interface LocalFile {
   id: string;
@@ -46,6 +50,8 @@ export default function HomeScreen() {
   const [localFiles, setLocalFiles] = useState<LocalFile[]>([]);
   const [cloudFiles, setCloudFiles] = useState<CloudFile[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  const netInfo = useNetInfo();
 
   useEffect(() => {
     // Initialize GoogleDriveService without authentication to enable local file access
@@ -308,6 +314,17 @@ export default function HomeScreen() {
           )}
           ListHeaderComponent={() => (
             <View style={styles.headerContainer}>
+              <View style={styles.networkStatus}>
+                {netInfo.isConnected ? (
+                  <ThemedText style={styles.networkStatusText}>
+                    <View style={styles.onlineIndicator} /> Online
+                  </ThemedText>
+                ) : (
+                  <ThemedText style={styles.networkStatusTextOffline}>
+                    <View style={styles.offlineIndicator} /> Offline
+                  </ThemedText>
+                )}
+              </View>
               <ThemedText type="title" style={styles.title}>
                 Road Quality Assessment
               </ThemedText>
@@ -393,11 +410,7 @@ export default function HomeScreen() {
                         );
                       }
                     }}
-                  >
-                    <ThemedText style={{ color: "#fff" }}>
-                      Check All Files
-                    </ThemedText>
-                  </Pressable>
+                  ></Pressable>
 
                   <ThemedText style={styles.hint}>
                     Selected project data will be available offline for field
@@ -418,12 +431,43 @@ export default function HomeScreen() {
           ListEmptyComponent={renderEmptyComponent}
           contentContainerStyle={styles.listContent}
         />
+        <SyncStatusPanel />
       </ThemedView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  networkStatus: {
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  networkStatusText: {
+    fontSize: 14,
+    color: "#34D399",
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  networkStatusTextOffline: {
+    fontSize: 14,
+    color: "#F87171",
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  onlineIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#34D399",
+    marginRight: 4,
+  },
+  offlineIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#F87171",
+    marginRight: 4,
+  },
   testButton: {
     backgroundColor: "#4e8d7c",
     padding: 10,

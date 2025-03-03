@@ -1,3 +1,4 @@
+// Updated app/_layout.tsx
 import {
   DarkTheme,
   DefaultTheme,
@@ -11,6 +12,7 @@ import { useEffect } from "react";
 import "react-native-reanimated";
 
 import { useColorScheme } from "@/hooks/useColorScheme";
+import { SyncService } from "@/services/syncService"; // Import SyncService
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -24,6 +26,9 @@ export default function RootLayout() {
   useEffect(() => {
     if (loaded) {
       SplashScreen.hideAsync();
+
+      // Initialize sync service when app loads
+      SyncService.initialize();
     }
   }, [loaded]);
 

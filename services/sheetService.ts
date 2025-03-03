@@ -3,6 +3,7 @@ import { QAFormData } from "../types/roadQuality";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as FileSystem from "expo-file-system";
 import Papa from "papaparse";
+import { GoogleDriveService } from "./googleDriveService";
 
 // Interface for CSV row structure
 interface CSVRow {
@@ -142,23 +143,46 @@ export async function updateRowInCSV(
   }
 }
 
-// Submit QA data - now updates existing row instead of appending
+// Submit QA data with cloud sync integration
 export async function submitQAData(
   filePath: string,
   testPoint: string,
   data: QAFormData,
   isOnline: boolean
-) {
+): Promise<{ success: boolean; message: string }> {
   try {
-    console.log("1. submitQAData called with:", { testPoint, data, isOnline });
+    console.log("1. submitQAData called with:", { testPoint, isOnline });
 
     // Always update local CSV file
     const updatedRow = await updateRowInCSV(filePath, testPoint, data);
     console.log("2. Local CSV updated");
 
     if (isOnline) {
-      // TODO: Sync with Google Drive
-      console.log("3a. Online mode - would sync to Google Drive");
+      try {
+        // Upload using the new public method instead of accessing private metadata
+        await GoogleDriveService.uploadFileByPath(filePath);
+        console.log("3a. Online mode - file synced to Google Drive");
+
+        return {
+          success: true,
+          message: "Assessment saved and synced to cloud",
+        };
+      } catch (uploadError) {
+        console.error("Error syncing to Google Drive:", uploadError);
+
+        // If online upload fails, add to queue as fallback
+        await addToSubmissionQueue({
+          filePath,
+          testPoint,
+          data,
+        });
+
+        return {
+          success: true,
+          message:
+            "Assessment saved locally. Cloud sync failed - will retry later.",
+        };
+      }
     } else {
       console.log("3b. Offline mode - changes saved locally");
       // Add to sync queue for later
@@ -167,12 +191,20 @@ export async function submitQAData(
         testPoint,
         data,
       });
-    }
 
-    return true;
+      return {
+        success: true,
+        message: "Assessment saved locally and will be uploaded when online",
+      };
+    }
   } catch (error) {
     console.error("Error in submitQAData:", error);
-    throw error;
+    return {
+      success: false,
+      message: `Error saving assessment: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`,
+    };
   }
 }
 
@@ -181,17 +213,52 @@ async function addToSubmissionQueue(submission: {
   filePath: string;
   testPoint: string;
   data: QAFormData;
-}) {
+}): Promise<boolean> {
   try {
     const queueKey = "qa_submission_queue";
     const queueString = await AsyncStorage.getItem(queueKey);
     const queue = queueString ? JSON.parse(queueString) : [];
-    queue.push(submission);
+
+    // Check if this test point already has a pending update
+    const existingIndex = queue.findIndex(
+      (item: any) =>
+        item.filePath === submission.filePath &&
+        item.testPoint === submission.testPoint
+    );
+
+    if (existingIndex >= 0) {
+      // Replace existing entry with newest data
+      queue[existingIndex] = submission;
+    } else {
+      // Add new entry
+      queue.push(submission);
+    }
+
     await AsyncStorage.setItem(queueKey, JSON.stringify(queue));
-    console.log("4. Added to submission queue");
+    console.log("4. Added/updated in submission queue");
     return true;
   } catch (error) {
     console.error("Error adding to queue:", error);
     return false;
+  }
+}
+
+// Get current sync status
+export async function getSyncStatus(): Promise<{
+  pendingCount: number;
+  isProcessing: boolean;
+}> {
+  try {
+    const processingKey = "qa_sync_processing";
+    const isProcessing = (await AsyncStorage.getItem(processingKey)) === "true";
+    const pendingCount = await GoogleDriveService.getSyncQueueSize();
+
+    return {
+      pendingCount,
+      isProcessing,
+    };
+  } catch (error) {
+    console.error("Error getting sync status:", error);
+    return { pendingCount: 0, isProcessing: false };
   }
 }
